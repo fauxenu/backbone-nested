@@ -95,18 +95,19 @@
 
                 for(var x = 0; x < relations.length; x++) {
                     var relation = relations[x].relation,
-                        value = relations[x].value;
+                        value = relations[x].value,
+                        changed = false;
 
                     if(!relation.relatedModel || !(relation.relatedModel.prototype instanceof Backbone.Model))
                         throw('Invalid relatedModel! Must inherit from Backbone.Model.');
 
                     // Updates relations
                     if(relation.type == Backbone.Many)
-                        this._setManyToOne(relation, value, options);
+                        changed = this._setManyToOne(relation, value, options);
                     else 
-                        this._setOneToOne(relation, value, options);
+                        changed = this._setOneToOne(relation, value, options);
 
-                    if(!options.silent) {
+                    if(!options.silent && changed) {
                         this.trigger(
                             'change:' + relation.key, 
                             this, 
@@ -126,6 +127,7 @@
              * @param {Object} relation nested relation hash
              * @param {Object} value relation value to set
              * @param {Object} [options] additional set options
+             * @return {Boolean} true if the nested collection was updated
              */
             _setManyToOne: function(relation, value, options) {
                 if(relation.collectionType && !(relation.collectionType.prototype instanceof Backbone.Collection))
@@ -138,10 +140,16 @@
                     relation.relatedModel
                 );
 
-                if(_.isArray(value) || value instanceof Backbone.Collection)
+                if(_.isArray(value) || value instanceof Backbone.Collection) {
                     collection.set(value, options);
-                else
+                    return true;
+                }
+                else if(!_.isEmpty(value)) {
                     collection.set([value], _.extend(options, {remove: false}));
+                    return true;
+                }
+                else
+                    return false;
             },
 
             /**
@@ -150,18 +158,23 @@
              * @param {Object} relation nested relation hash
              * @param {Object} value relation value to set
              * @param {Object} [options] additional set options
+             * @return {Boolean} true if the nested model was created/updated
              */
             _setOneToOne: function(relation, value, options) {
                 var model = this.get(relation.key),
-                    field = null;
+                    field = null,
+                    result = true;
 
-                if(model && model instanceof Backbone.Model)
-                    field = model.isNew() ? 'id' : 'cid';
+                if(!_.isEmpty(value) && model && model instanceof Backbone.Model)
+                    field = !model.isNew() ? 'id' : 'cid';
 
                 if(field && value[field] && value[field] == model[field]) {
                     // Updates existing model
                     var attrs = (value instanceof Backbone.Model) ? value.attributes : value;
                     model.set(attrs, options);
+                    
+                    if(_.isEqual(model.attributes, attrs))
+                		result = false;
                 }
                 else {
                     // Creates new model
@@ -172,6 +185,8 @@
                         options
                     );
                 }
+
+                return result;
             },
 
             /**
@@ -207,8 +222,10 @@
             _prepareNestedModel: function(obj, modelType){
                 if(obj instanceof Backbone.Model)
                     return obj;
-                else
+                else if(!_.isEmpty(obj))
                     return new modelType(obj);
+                else
+                    return null;
             },
 
     		/**
